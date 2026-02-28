@@ -10,5 +10,17 @@
     "quiz_error_ia": "Ando un poco espeso ahora mismo y no he podido generar las preguntas. ¡Pídemelo otra vez!",
     "recordatorio_exito": "⏰ ¡Hecho! Te recordaré '{tarea}' el {fecha}.",
     "intervalo_exito": "⏱️ ¡Hecho! Tu intervalo de exámenes ahora es de {dias} días. Te avisaré 12h antes de que caduque.",
-    "error_critico": "¡Mil disculpas! Algo ha fallado en mi sistema interno. Dame unos minutos e inténtalo de nuevo."
+    "error_critico": "¡Mil disculpas! Algo ha fallado en mi sistema interno. Dame unos minutos e inténtalo de nuevo.",
+    "help": [
+        "*/process*: Turns your Inbox into structured knowledge.",
+        "*/rectify [text]*: Adds context or corrections before processing.",
+        "*/list*: Your Brain's dashboard—stats and chronological log.",
+        "*/remember [query]*: Intelligent search through your memory.",
+        "*/weekly*: AI-powered digest of your last 7 days.",
+        "*/quiz*: Active recall session to test your knowledge.",
+        "*/interval [hours]*: Sets how often I'll proactively refresh your memory.",
+        "*/remind [text]*: Schedules a quick manual notification.",
+        "*/remove*: Resets memory or removes specific logs.",
+        "*/help*: Shows this command list."
+    ]
 }

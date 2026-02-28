@@ -1,67 +1,80 @@
 import sqlite3
-import json
-from web_reader import WebReader
 
 class Saver:
-    def __init__(self, llm, db_path="cerebro.db"):
+    def __init__(self, db_path="cerebro.db", llm=None):
         self.llm = llm
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.crear_tablas()
 
     def crear_tablas(self):
-        # Añadida la columna 'fecha'
+        # Tabla de conocimiento
         self.conn.execute('''CREATE TABLE IF NOT EXISTS topics (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            tema TEXT, 
-            resumen TEXT, 
-            fuentes TEXT,
+            tema TEXT, resumen TEXT, fuentes TEXT,
             fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        # NUEVA: Tabla de configuración de usuario
+        self.conn.execute('''CREATE TABLE IF NOT EXISTS config (
+            usuario TEXT PRIMARY KEY,
+            intervalo_horas INTEGER DEFAULT 24,
+            ultima_interaccion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
         self.conn.commit()
 
-    def procesar_y_guardar(self, texto_crudo: str):
-        texto_final = WebReader.extraer_texto(texto_crudo)
-        prompt = f"Analiza el texto. Extrae tema, resumen y fuentes. Devuelve SOLO JSON: {{\"tema\": \"...\", \"resumen\": \"...\", \"fuentes\": \"...\"}}\nTexto: {texto_final}"
-        respuesta_json = self.llm.consultar(prompt)
-        
+    def guardar_conocimiento_final(self, tema: str, resumen: str, fuentes: str = "Inbox") -> bool:
         try:
-            datos = json.loads(respuesta_json.replace("```json", "").replace("```", "").strip())
-            self.conn.execute('INSERT INTO topics (tema, resumen, fuentes) VALUES (?, ?, ?)', (datos.get('tema'), datos.get('resumen'), str(datos.get('fuentes'))))
+            self.conn.execute('INSERT INTO topics (tema, resumen, fuentes) VALUES (?, ?, ?)', (tema, resumen, fuentes))
             self.conn.commit()
-            return datos.get('tema')
-        except: return None
+            return True
+        except Exception as e:
+            print(f"Error Saver: {e}")
+            return False
+
+    def obtener_topic_aleatorio(self):
+        """Recupera una nota al azar para el repaso proactivo."""
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT tema, resumen FROM topics ORDER BY RANDOM() LIMIT 1')
+        res = cursor.fetchone()
+        return {"tema": res[0], "resumen": res[1]} if res else None
+
+    def set_intervalo(self, usuario, horas):
+        self.conn.execute('INSERT OR REPLACE INTO config (usuario, intervalo_horas) VALUES (?, ?)', (usuario, horas))
+        self.conn.commit()
+
+    def get_intervalo(self, usuario):
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT intervalo_horas FROM config WHERE usuario = ?', (usuario,))
+        res = cursor.fetchone()
+        return res[0] if res else 24
 
     def contar_topics(self):
         cursor = self.conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM topics')
         return cursor.fetchone()[0]
 
+    def listar_conocimiento(self, offset: int = 0, limite: int = 15):
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT fecha, tema FROM topics ORDER BY fecha DESC LIMIT ? OFFSET ?', (limite + 1, offset))
+        resultados = cursor.fetchall()
+        if not resultados: return "📭 Brain is empty.", False
+        hay_mas = len(resultados) > limite
+        texto = "📚 *DIGITAL BRAIN LOG*\n\n" + "\n".join([f"🔹 [{r[0].split()[0]}] {r[1]}" for r in resultados[:limite]])
+        return texto, hay_mas
+
     def recordar_topic(self, query: str):
+        if not self.llm: return "IA not configured."
         cursor = self.conn.cursor()
         cursor.execute('SELECT tema, resumen FROM topics')
         topics = cursor.fetchall()
-        
-        if not topics: return "Aún no tengo información guardada."
-        lista_topics = "\n".join([f"- {t[0]}: {t[1]}" for t in topics])
-        
-        prompt = f"Actúa como mi cerebro digital. Topics:\n{lista_topics}\nUsuario: '{query}'. Encuentra el topic y explícalo de forma conversacional. Si no coincide nada, responde: 'No sé a qué te refieres.'"
-        return self.llm.consultar(prompt)
+        if not topics: return "No knowledge stored."
+        contexto = "\n".join([f"- {t[0]}: {t[1]}" for t in topics])
+        return self.llm.consultar(f"Based on: {contexto}\nAnswer: {query}")
 
     def generar_resumen_semanal(self):
+        if not self.llm: return "IA not configured."
         cursor = self.conn.cursor()
         cursor.execute("SELECT tema, resumen FROM topics WHERE fecha >= date('now', '-7 days')")
-        topics = cursor.fetchall()
-        
-        if not topics:
-            return "📭 No has guardado ningún apunte nuevo en los últimos 7 días. ¡Anímate a enviarme algo para la próxima semana!"
-            
-        contexto = "\n".join([f"Tema: {t[0]}\nResumen: {t[1]}" for t in topics])
-        
-        prompt = f"""
-        Actúa como un tutor personal motivador. Aquí tienes los apuntes que he guardado en los últimos 7 días:
-        {contexto}
-        
-        Escribe un resumen semanal unificado y ameno. Intenta conectar las ideas si tienen relación entre sí.
-        Usa emojis, destaca conceptos clave en negrita, y despídete animándome a seguir aprendiendo.
-        """
-        return self.llm.consultar(prompt)
+        notes = cursor.fetchall()
+        if not notes: return "No new notes this week."
+        contexto = "\n".join([f"Topic: {n[0]}\nSummary: {n[1]}" for n in notes])
+        return self.llm.consultar(f"Create a weekly synthesis of these topics:\n{contexto}")

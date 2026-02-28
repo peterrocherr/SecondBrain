@@ -7,3 +7,7 @@ google-generativeai
 python-dotenv
 requests
 beautifulsoup4
+pypdf
+SpeechRecognition
+pydub
+youtube-transcript-api

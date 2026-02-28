@@ -1,49 +1,56 @@
-import json
-from datetime import datetime, timedelta
+import datetime
 
 class ReminderManager:
-    def __init__(self, llm, scheduler, send_func):
+    def __init__(self, llm, scheduler, send_func, saver):
         self.llm = llm
         self.scheduler = scheduler
         self.send_func = send_func
+        self.saver = saver
 
-    def procesar_remind(self, remitente: str, texto: str, textos: dict) -> str:
-        ahora = datetime.now()
-        fecha_actual = ahora.strftime('%Y-%m-%d %H:%M:%S')
-        
-        prompt = f"""
-        Hoy es {fecha_actual}.
-        Analiza esta orden: '{texto}'. 
-        Calcula la fecha y hora exacta en la que debo avisar al usuario.
-        Devuelve SOLO JSON con este formato estricto: {{"fecha_hora": "YYYY-MM-DD HH:MM:SS", "tarea": "..."}}
-        """
-        
+    def procesar_intervalo(self, remitente, texto):
+        """Configura el intervalo de repaso y programa la tarea."""
         try:
-            resp = self.llm.consultar(prompt).replace("```json", "").replace("```", "").strip()
-            datos = json.loads(resp)
+            # Extraer número del comando: /interval 12
+            partes = texto.split()
+            if len(partes) < 2:
+                return "⚠️ Usage: `/interval [hours]` (e.g., `/interval 24` for daily checks)"
             
-            fecha_ejecucion = datetime.strptime(datos["fecha_hora"], '%Y-%m-%d %H:%M:%S')
-            self.scheduler.add_job(self.send_func, 'date', run_date=fecha_ejecucion, args=[remitente, f"⏰ RECORDATORIO: {datos['tarea']}"])
+            horas = int(partes[1])
+            self.saver.set_intervalo(remitente, horas)
             
-            fecha_bonita = fecha_ejecucion.strftime('%d/%m/%Y a las %H:%M')
+            # Programar la tarea proactiva en el scheduler
+            job_id = f"recall_{remitente}"
+            # Eliminamos si ya existía una para ese usuario
+            if self.scheduler.get_job(job_id):
+                self.scheduler.remove_job(job_id)
             
-            # AQUÍ ESTÁ EL CAMBIO: Volvemos a usar el JSON de textos
-            return textos["recordatorio_exito"].format(tarea=datos['tarea'], fecha=fecha_bonita)
+            # Añadimos la nueva tarea recurrente
+            self.scheduler.add_job(
+                self.daily_recall, 
+                'interval', 
+                hours=horas, 
+                args=[remitente], 
+                id=job_id
+            )
             
-        except Exception as e:
-            print(f"Error en remind: {e}")
-            return "❌ No he entendido bien la fecha. Usa algo como: /remind mañana a las 17:00 que llame al dentista."
+            return f"✅ Spaced Repetition set to every {horas} hours. I'll message you proactively!"
+        except ValueError:
+            return "❌ Please provide a valid number of hours."
 
-    def procesar_intervalo(self, remitente: str, texto: str, streak_manager, textos: dict) -> str:
-        try:
-            dias = int(texto.split(" ")[1])
-            if 1 <= dias <= 7:
-                streak_manager.cambiar_intervalo(remitente, dias)
-                fecha_aviso = datetime.now() + timedelta(days=dias) - timedelta(hours=12)
-                
-                if fecha_aviso > datetime.now():
-                    self.scheduler.add_job(self.send_func, 'date', run_date=fecha_aviso, args=[remitente, "⏰ ¡Tic tac! Tu intervalo acaba en 12h. ¡Haz un /quiz para mantener la racha!"])
-                return textos["intervalo_exito"].format(dias=dias)
-            return "❌ El intervalo debe ser entre 1 y 7 días."
-        except:
-            return "❌ Formato incorrecto. Usa: /interval 3"
+    def daily_recall(self, remitente):
+        """El bot te escribe de forma proactiva para repasar."""
+        nota = self.saver.obtener_topic_aleatorio()
+        if nota:
+            mensaje = (
+                f"🧠 *PROACTIVE RECALL*\n"
+                f"Time to refresh your memory! Do you remember this?\n\n"
+                f"*Topic:* {nota['tema']}\n"
+                f"*Summary:* {nota['resumen']}\n\n"
+                f"Use `/quiz` if you want to test yourself!"
+            )
+            self.send_func(remitente, mensaje)
+
+    def procesar_remind(self, remitente, texto):
+        # Lógica simple de recordatorios puntuales
+        remind_text = texto.replace("/remind", "").strip()
+        return f"⏰ Reminder set for: {remind_text} (Simulated)"

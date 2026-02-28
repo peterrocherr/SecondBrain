@@ -1,35 +1,30 @@
-from google import genai
-import os
+import google.generativeai as genai
+import time
+import re
 
 class LLMManager:
     def __init__(self, api_key: str):
-        # DIAGNÓSTICO: Verificamos si la clave llegó vacía
-        if not api_key:
-            print("❌ ERROR: El LLMManager recibió una clave VACÍA. Revisa tu archivo .env")
-            self.client = None
-            return
+        genai.configure(api_key=api_key)
+        # DEFINIMOS AQUÍ MODELO
+        self.model = genai.GenerativeModel("gemini-3-flash-preview")
+        print("LLMManager: Conectado a LLM.")
 
-        print(f"Intentando conectar con: {api_key[:5]}...{api_key[-4:]}")
+    def consultar(self, prompt: str, intentos=3) -> str:
+        for i in range(intentos):
+            try:
+                return self.model.generate_content(prompt).text
+            except Exception as e:
+                error_msg = str(e)
+                # Si es un error de cuota (429), extraemos el tiempo de espera
+                if "429" in error_msg or "quota" in error_msg.lower():
+                    # Intentamos buscar cuántos segundos dice Google que esperemos
+                    segundos = re.search(r'(\d+\.?\d*)s', error_msg)
+                    tiempo_espera = float(segundos.group(1)) + 1 if segundos else 10
+                    
+                    print(f"⏳ Límite alcanzado. Reintentando en {tiempo_espera}s... (Intento {i+1}/{intentos})")
+                    time.sleep(tiempo_espera)
+                else:
+                    print(f"❌ Error crítico en LLM: {e}")
+                    break
         
-        try:
-            self.client = genai.Client(api_key=api_key)
-            self.model_id = "gemini-1.5-flash"
-            print("✅ Cliente de Google GenAI instanciado.")
-        except Exception as e:
-            print(f"❌ Error al instanciar el cliente: {e}")
-            self.client = None
-
-    def consultar(self, prompt: str) -> str:
-        if not self.client:
-            return "Error: No hay cliente de IA configurado."
-            
-        try:
-            response = self.client.models.generate_content(
-                model=self.model_id,
-                contents=prompt
-            )
-            return response.text
-        except Exception as e:
-            # Si aquí sale el error 400, es que la clave es rechazada por Google
-            print(f"❌ Error en la llamada a Google AI: {e}")
-            raise e
+        return "ERROR_LIMIT"
