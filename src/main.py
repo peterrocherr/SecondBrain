@@ -12,7 +12,8 @@ from message_router import MessageRouter
 
 def iniciar_servidor():
     # 1. Carga de configuración
-    load_dotenv()
+    env_path = Path(__file__).parent / ".env"
+    load_dotenv(dotenv_path=env_path)
     with open("messages.json", "r", encoding="utf-8") as f:
         textos = json.load(f)
 

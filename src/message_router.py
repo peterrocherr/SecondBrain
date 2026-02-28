@@ -32,7 +32,7 @@ class MessageRouter:
                 respuesta = self.quizzer.generar_quiz_semanal(remitente, self.textos, self.saver, self.streak_manager)
             elif len(comando) == 5 and all(l in "abc" for l in comando):
                 respuesta = self.quizzer.evaluar_respuesta(remitente, texto, self.streak_manager, self.textos)
-            elif comando.startswith("/intervalo "):
+            elif comando.startswith("/interval "):
                 respuesta = self.reminders.procesar_intervalo(remitente, texto, self.streak_manager, self.textos)
             elif comando.startswith("/remember "):
                 query = texto.replace("/remember ", "").strip()
