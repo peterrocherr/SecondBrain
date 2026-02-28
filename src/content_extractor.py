@@ -90,3 +90,20 @@ class ContentExtractor:
             t = YouTubeTranscriptApi.get_transcript(v_id, languages=['es', 'en'])
             return f"\n[YT]: {ContentExtractor.sanitize_text(' '.join([i['text'] for i in t]))}"
         except: return "⚠️ ERROR YT: Sin subtítulos."
+    @staticmethod
+    def extraer_imagen(fuente, llm):
+        """Usa Gemini Vision para OCR y descripción inteligente de la imagen."""
+        try:
+            datos_imagen = ContentExtractor._obtener_datos(fuente).read()
+            prompt = (
+                "Actúa como un sistema de OCR avanzado. "
+                "Extrae todo el texto visible en esta imagen con fidelidad exacta. "
+                "Si no hay texto, describe brevemente qué muestra la imagen "
+                "para guardarlo en un diario digital."
+            )
+            resultado = llm.analizar_imagen(datos_imagen, prompt)
+            if resultado == "ERROR_LIMIT":
+                return "⚠️ ERROR IMAGEN: límite de API alcanzado."
+            return f"\n[IMAGE]: {ContentExtractor.sanitize_text(resultado)}"
+        except Exception as e:
+            return f"⚠️ ERROR IMAGEN: {e}"

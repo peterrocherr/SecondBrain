@@ -35,6 +35,7 @@ def simulator():
     print("  !pdf C:\\ruta\\archivo.pdf")
     print("  !audio C:\\ruta\\audio.ogg")
     print("  !video C:\\ruta\\video.mp4")
+    print("  !image C:\\ruta\\imagen.jpg")
     print("Comandos extra:")
     print("  !debug  -> Ver las notas pendientes en el Inbox")
     print("  exit    -> Cerrar el simulador")
@@ -54,7 +55,7 @@ def simulator():
     quizzer = Quizzer(llm=llm)
 
     # 3. El Router (el cerebro real)
-    router = MessageRouter(saver, streak_manager, quizzer, reminders, textos, motor_falso, inbox, ai_processor, estado)
+    router = MessageRouter(saver, streak_manager, quizzer, reminders, textos, motor_falso, inbox, ai_processor, estado, llm=llm)
 
     # 4. Bucle de chat
     user_phone = "whatsapp:+123456789"
@@ -89,6 +90,12 @@ def simulator():
                 media_type = "audio/ogg"
                 texto_final = "Te mando este audio."
                 
+            elif user_input.startswith("!image "):
+                num_media = "1"
+                media_url = user_input.replace("!image ", "").strip()
+                media_type = "image/jpeg"
+                texto_final = "Te mando esta imagen."
+
             elif user_input.startswith("!video "):
                 num_media = "1"
                 media_url = user_input.replace("!video ", "").strip()
@@ -98,10 +105,11 @@ def simulator():
             # --- HERRAMIENTA DE DEBUG ---
             elif user_input == "!debug":
                 print("\n🔍 [DEBUG - ESTADO DEL INBOX]")
-                notas = inbox.obtener_todo()
-                print(f"Notas acumuladas: {len(notas)}")
-                for i, n in enumerate(notas):
-                    print(f"  {i+1}. {n[:150]}...")
+                notas_meta = inbox.obtener_con_metadatos(user_phone)
+                print(f"Notas pendientes: {len(notas_meta)}")
+                print(inbox.resumen_por_tipo(user_phone))
+                for i, n in enumerate(notas_meta):
+                    print(f"  {i+1}. [{n['tipo']}] {n['texto'][:120]}...")
                 continue
 
             # Ejecutamos la lógica real del router

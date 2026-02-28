@@ -43,7 +43,7 @@ def iniciar_servidor():
     quizzer = Quizzer(llm=llm)
 
     # 4. Enrutador Modular
-    router = MessageRouter(saver, streak_manager, quizzer, reminders, textos, motor, inbox, ai_processor, estado)
+    router = MessageRouter(saver, streak_manager, quizzer, reminders, textos, motor, inbox, ai_processor, estado, llm=llm)
 
     # 5. Arranque
     motor.configurar_recepcion(router.procesar_mensaje)

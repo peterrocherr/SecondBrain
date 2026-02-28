@@ -21,6 +21,7 @@
         "*/interval [hours]*: Sets how often I'll proactively refresh your memory.",
         "*/remind [text]*: Schedules a quick manual notification.",
         "*/remove*: Resets memory or removes specific logs.",
-        "*/help*: Shows this command list."
+        "*/help*: Shows this command list.",
+        "*/export*: Exports your entire Brain to Markdown files (Obsidian/MkDocs compatible)."
     ]
 }

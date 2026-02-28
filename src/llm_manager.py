@@ -1,30 +1,42 @@
 import google.generativeai as genai
 import time
 import re
+import io
 
 class LLMManager:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, modelo: str = "gemini-2.0-flash"):
         genai.configure(api_key=api_key)
-        # DEFINIMOS AQUÍ MODELO
-        self.model = genai.GenerativeModel("gemini-3-flash-preview")
-        print("LLMManager: Conectado a LLM.")
+        self.model = genai.GenerativeModel(modelo)
+        print(f"LLMManager: Conectado a {modelo}.")
 
-    def consultar(self, prompt: str, intentos=3) -> str:
+    def _con_reintentos(self, fn, intentos=3):
+        """Wrapper genérico de reintentos con backoff para cuota 429."""
         for i in range(intentos):
             try:
-                return self.model.generate_content(prompt).text
+                return fn()
             except Exception as e:
                 error_msg = str(e)
-                # Si es un error de cuota (429), extraemos el tiempo de espera
                 if "429" in error_msg or "quota" in error_msg.lower():
-                    # Intentamos buscar cuántos segundos dice Google que esperemos
                     segundos = re.search(r'(\d+\.?\d*)s', error_msg)
-                    tiempo_espera = float(segundos.group(1)) + 1 if segundos else 10
-                    
-                    print(f"⏳ Límite alcanzado. Reintentando en {tiempo_espera}s... (Intento {i+1}/{intentos})")
-                    time.sleep(tiempo_espera)
+                    espera = float(segundos.group(1)) + 1 if segundos else 10
+                    print(f"⏳ Límite alcanzado. Reintentando en {espera:.1f}s... ({i+1}/{intentos})")
+                    time.sleep(espera)
                 else:
                     print(f"❌ Error crítico en LLM: {e}")
                     break
-        
         return "ERROR_LIMIT"
+
+    def consultar(self, prompt: str, intentos=3) -> str:
+        return self._con_reintentos(
+            lambda: self.model.generate_content(prompt).text,
+            intentos
+        )
+
+    def analizar_imagen(self, datos_imagen: bytes, prompt: str, intentos=3) -> str:
+        """Envía imagen + prompt al modelo multimodal de Gemini."""
+        import PIL.Image
+        imagen_pil = PIL.Image.open(io.BytesIO(datos_imagen))
+        return self._con_reintentos(
+            lambda: self.model.generate_content([prompt, imagen_pil]).text,
+            intentos
+        )
