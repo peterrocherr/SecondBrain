@@ -5,9 +5,13 @@ class Quizzer:
     def __init__(self, llm, db_path="cerebro.db"):
         self.llm = llm
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
-        self.quiz_actual = {}
+        self.quiz_actual = {} # Guarda {"respuestas": "ABC", "texto": "..."}
 
     def generar_quiz_semanal(self, telefono: str, textos: dict, saver, streak_manager):
+        # Si ya tiene un quiz a medias, se lo reenviamos intacto
+        if telefono in self.quiz_actual:
+            return "⚠️ Ya tienes un examen a medias. ¡Aquí lo tienes de nuevo!\n\n" + self.quiz_actual[telefono]["texto"]
+
         if saver.contar_topics() < 5: return textos["quiz_sin_topics"]
         if not streak_manager.puede_hacer_quiz(telefono): return textos["quiz_sin_nuevos"]
 
@@ -25,15 +29,18 @@ class Quizzer:
             for i, p in enumerate(datos['preguntas']):
                 mensaje += f"\n{i+1}. {p['pregunta']}\n" + "\n".join(p['opciones']) + "\n"
                 ans += p['correcta']
-            self.quiz_actual[telefono] = ans
-            return mensaje + "\n👉 Responde con las 5 letras (ej. ABCAA)."
+            
+            mensaje_final = mensaje + "\n👉 Responde con las 5 letras (ej. ABCAA)."
+            self.quiz_actual[telefono] = {"respuestas": ans, "texto": mensaje_final}
+            
+            return mensaje_final
         except: return textos["quiz_error_ia"]
 
     def evaluar_respuesta(self, telefono: str, respuestas_usuario: str, streak_manager, textos: dict):
         if telefono not in self.quiz_actual: return textos["quiz_sin_activo"]
             
         usuario_limpio = respuestas_usuario.strip().upper().replace(" ", "")
-        correctas = self.quiz_actual[telefono]
+        correctas = self.quiz_actual[telefono]["respuestas"]
         
         if usuario_limpio == correctas:
             racha, puntos, vidas, pts_ganados, rend = streak_manager.registrar_acierto(telefono)

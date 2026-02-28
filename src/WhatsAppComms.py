@@ -31,10 +31,18 @@ class WhatsAppComms:
         async def home():
             return {"status": "Cerebro Digital Online"}
 
+        # Aceptar MediaUrl y NumMedia
         @self.app.post("/whatsapp")
-        async def webhook_whatsapp(From: str = Form(...), Body: str = Form(...)):
+        async def webhook_whatsapp(
+            From: str = Form(...), 
+            Body: str = Form(""), 
+            NumMedia: str = Form("0"), 
+            MediaUrl0: str = Form(None), 
+            MediaContentType0: str = Form(None)
+        ):
             if self.funcion_recepcion:
-                self.funcion_recepcion(From, Body)
+                # Le pasamos todos los datos nuevos a main.py
+                self.funcion_recepcion(From, Body, NumMedia, MediaUrl0, MediaContentType0)
             return {"status": "ok"}
 
     def configurar_recepcion(self, funcion):
