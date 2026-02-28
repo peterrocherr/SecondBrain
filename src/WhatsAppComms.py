@@ -1,5 +1,6 @@
 import uvicorn
 import json
+import asyncio
 from fastapi import FastAPI, Form
 from apscheduler.schedulers.background import BackgroundScheduler
 from contextlib import asynccontextmanager
@@ -19,11 +20,16 @@ class WhatsAppComms:
         self.scheduler = BackgroundScheduler()
         self.twilio_client = None
         self.numero_twilio = None
+        # Cola asíncrona para procesar mensajes secuencialmente
+        self.queue = asyncio.Queue()
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             self.scheduler.start()
+            # Iniciamos el trabajador de la cola en segundo plano
+            worker_task = asyncio.create_task(self._worker())
             yield
+            worker_task.cancel()
             self.scheduler.shutdown()
 
         self.app = FastAPI(lifespan=lifespan)
@@ -32,9 +38,9 @@ class WhatsAppComms:
         async def home():
             return {"status": "Cerebro Digital Online"}
 
-        # Aceptar MediaUrl y NumMedia
         @self.app.post("/whatsapp")
         async def webhook_whatsapp(
+            MessageSid: str = Form(...),
             From: str = Form(...), 
             Body: str = Form(""), 
             NumMedia: str = Form("0"), 
@@ -42,9 +48,26 @@ class WhatsAppComms:
             MediaContentType0: str = Form(None)
         ):
             if self.funcion_recepcion:
-                # Le pasamos todos los datos nuevos a main.py
-                self.funcion_recepcion(From, Body, NumMedia, MediaUrl0, MediaContentType0)
+                # Añadimos a la cola y respondemos 200 OK inmediatamente
+                await self.queue.put((From, Body, NumMedia, MediaUrl0, MediaContentType0, MessageSid))
+            
             return {"status": "ok"}
+
+    async def _worker(self):
+        """Procesa la cola de uno en uno para evitar bloqueos de la IA."""
+        print("Cola de procesamiento lista.")
+        while True:
+            datos = await self.queue.get()
+            try:
+                if self.funcion_recepcion:
+                    # Ejecutamos la función de MessageRouter
+                    self.funcion_recepcion(*datos)
+            except Exception as e:
+                print(f"❌ Error en procesamiento de cola: {e}")
+            finally:
+                self.queue.task_done()
+                # Breve pausa para no saturar la API entre archivos
+                await asyncio.sleep(1.5)
 
     def configurar_recepcion(self, funcion):
         self.funcion_recepcion = funcion
@@ -60,70 +83,7 @@ class WhatsAppComms:
         try:
             self.twilio_client.messages.create(from_=self.numero_twilio, body=texto, to=destinatario)
         except Exception as e:
-            print(f"❌ Error enviando mensaje a Twilio: {e}")
-
-    def enviar_botones(self, destinatario: str, texto_cuerpo: str, botones: list):
-        """
-        Envía botones de respuesta rápida (Quick Replies).
-        Twilio admite un máximo de 3 botones con títulos de hasta 20 caracteres.
-        """
-        if not self.twilio_client: return
-        if not destinatario.startswith("whatsapp:"): destinatario = f"whatsapp:{destinatario}"
-        
-        try:
-            # Twilio requiere que el ID sea en minúsculas y sin espacios raros idealmente
-            actions = [{"type": "reply", "reply": {"id": b[:20].lower(), "title": b[:20]}} for b in botones[:3]]
-            
-            self.twilio_client.messages.create(
-                from_=self.numero_twilio,
-                to=destinatario,
-                body=texto_cuerpo,
-                persistent_action=[{
-                    "type": "whatsapp:interactive",
-                    "parameters": {
-                        "type": "button",
-                        "body": {"text": texto_cuerpo},
-                        "action": {"buttons": actions}
-                    }
-                }]
-            )
-        except Exception as e:
-            print(f"❌ Error enviando botones Twilio: {e}")
-            # Fallback de seguridad: si fallan los botones, enviamos como texto normal
-            self.enviar_mensaje(destinatario, f"{texto_cuerpo}\n\nOpciones: {', '.join(botones)}")
-
-    def enviar_lista(self, destinatario: str, texto_cuerpo: str, titulo_boton: str, opciones: list):
-        """
-        Envía un menú desplegable (lista).
-        'opciones' debe ser una lista de tuplas (id_opcion, titulo_opcion).
-        """
-        if not self.twilio_client: return
-        if not destinatario.startswith("whatsapp:"): destinatario = f"whatsapp:{destinatario}"
-        
-        try:
-            rows = []
-            for row_id, titulo in opciones[:10]: # Máximo 10 opciones
-                rows.append({"id": str(row_id)[:20], "title": str(titulo)[:24]})
-
-            self.twilio_client.messages.create(
-                from_=self.numero_twilio,
-                to=destinatario,
-                body=texto_cuerpo,
-                persistent_action=[{
-                    "type": "whatsapp:interactive",
-                    "parameters": {
-                        "type": "list",
-                        "body": {"text": texto_cuerpo},
-                        "action": {
-                            "button": titulo_boton[:20],
-                            "sections": [{"title": "Opciones disponibles", "rows": rows}]
-                        }
-                    }
-                }]
-            )
-        except Exception as e:
-            print(f"❌ Error enviando lista Twilio: {e}")
-            self.enviar_mensaje(destinatario, texto_cuerpo)
+            print(f"❌ Error enviando mensaje: {e}")
 
     def iniciar(self, puerto=8000):
         print("Iniciando servidor...")

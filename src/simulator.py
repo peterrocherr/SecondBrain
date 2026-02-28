@@ -105,7 +105,9 @@ def simulator():
                 continue
 
             # Ejecutamos la lógica real del router
-            router.procesar_mensaje(user_phone, texto_final, num_media, media_url, media_type)
+            import uuid
+            fake_sid = f"SIM_{uuid.uuid4().hex[:8].upper()}"
+            router.procesar_mensaje(user_phone, texto_final, num_media, media_url, media_type, fake_sid)
 
         except KeyboardInterrupt:
             print("\n👋 Apagando simulador de forma forzada...")

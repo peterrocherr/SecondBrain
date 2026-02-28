@@ -70,6 +70,11 @@ class Saver:
         contexto = "\n".join([f"- {t[0]}: {t[1]}" for t in topics])
         return self.llm.consultar(f"Based on: {contexto}\nAnswer: {query}")
 
+    def borrar_cerebro(self):
+        """Elimina todos los topics de la base de datos."""
+        self.conn.execute('DELETE FROM topics')
+        self.conn.commit()
+
     def generar_resumen_semanal(self):
         if not self.llm: return "IA not configured."
         cursor = self.conn.cursor()

@@ -1,5 +1,5 @@
 class CommandProcessor:
-    def __init__(self, saver, inbox, ai, quizzer, reminders, motor, estado, textos):
+    def __init__(self, saver, inbox, ai, quizzer, reminders, motor, estado, textos, streak_manager=None):
         self.saver = saver
         self.inbox = inbox
         self.ai = ai
@@ -8,6 +8,7 @@ class CommandProcessor:
         self.motor = motor
         self.estado = estado
         self.textos = textos
+        self.streak_manager = streak_manager
 
     def ejecutar(self, remitente, comando_base, texto_completo):
         if comando_base == "/help":
@@ -19,7 +20,6 @@ class CommandProcessor:
             if not all_notes:
                 self.motor.enviar_mensaje(remitente, "📭 Your Inbox is empty.")
                 return
-            
             self.motor.enviar_mensaje(remitente, f"🧠 Analyzing {len(all_notes)} pending items...")
             propuesta_ia = self.ai.generar_propuesta(all_notes)
             if propuesta_ia:
@@ -48,7 +48,22 @@ class CommandProcessor:
         elif comando_base == "/remove":
             self.estado.estados[remitente] = "ESPERANDO_BORRADO_DB"
             self.motor.enviar_mensaje(remitente, "⚠️ *ALERT!* Wipe database? (Yes/No)")
-            
+
+        # FIX: /remember ahora llama a saver.recordar_topic()
+        elif comando_base == "/remember":
+            query = texto_completo[9:].strip()
+            if not query:
+                self.motor.enviar_mensaje(remitente, "⚠️ Use: `/remember [question]`")
+            else:
+                self.motor.enviar_mensaje(remitente, self.saver.recordar_topic(query))
+
+        # FIX: /remind e /interval ahora tienen handler real
+        elif comando_base == "/remind":
+            self.motor.enviar_mensaje(remitente, self.reminders.procesar_remind(remitente, texto_completo))
+
+        elif comando_base == "/interval":
+            self.motor.enviar_mensaje(remitente, self.reminders.procesar_intervalo(remitente, texto_completo))
+
+        # FIX: /quiz ya no pasa None como streak_manager
         elif comando_base == "/quiz":
-            # Suponiendo que quizzer devuelve el texto directamente
-            self.motor.enviar_mensaje(remitente, self.quizzer.generar_quiz_semanal(remitente, self.textos, self.saver, None))
+            self.motor.enviar_mensaje(remitente, self.quizzer.generar_quiz_semanal(remitente, self.textos, self.saver, self.streak_manager))
