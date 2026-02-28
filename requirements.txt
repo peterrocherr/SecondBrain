@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-multipart
+apscheduler
+twilio
+google-generativeai
+python-dotenv
+requests
+beautifulsoup4

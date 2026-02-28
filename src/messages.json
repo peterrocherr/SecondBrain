@@ -1,0 +1,14 @@
+{
+    "captura_exito": "¡Anotado! He guardado '{tema}' en tu cerebro digital. Ya tienes {total} ideas a salvo.",
+    "captura_error": "Ups, me he liado y no he podido guardar eso. ¿Puedes volver a enviármelo?",
+    "quiz_sin_topics": "📚 Necesitamos tener al menos 5 topics guardados en total para poder generarte un examen. ¡Sigue aprendiendo!",
+    "quiz_sin_nuevos": "¡Un segundo! Para desbloquear un nuevo examen tienes que enviarme un mínimo de 5 apuntes nuevos. ¡Te faltan algunos!",
+    "quiz_sin_activo": "No tienes ningún examen a medias ahora mismo. Pide uno con /quiz.",
+    "quiz_acierto": "🎉 ¡BINGO! +{puntos_ganados} pts (Rendimiento: {rendimiento}).\n🔥 Racha: {racha} | ❤️ Vidas: {vidas} | 🏆 Total: {puntos}.",
+    "quiz_fallo": "¡Fallo! Las correctas eran: {correctas}.\n💔 Pierdes una vida. Te quedan {vidas} ❤️.",
+    "quiz_muerte": "Te quedaste sin vidas... Las correctas eran {correctas}.\n Pierdes tu racha de semanas, pero te restauro las 3 vidas para que vuelvas a empezar.",
+    "quiz_error_ia": "Ando un poco espeso ahora mismo y no he podido generar las preguntas. ¡Pídemelo otra vez!",
+    "recordatorio_exito": "⏰ ¡Hecho! Te recordaré '{tarea}' el {fecha}.",
+    "intervalo_exito": "⏱️ ¡Hecho! Tu intervalo de exámenes ahora es de {dias} días. Te avisaré 12h antes de que caduque.",
+    "error_critico": "¡Mil disculpas! Algo ha fallado en mi sistema interno. Dame unos minutos e inténtalo de nuevo."
+}
