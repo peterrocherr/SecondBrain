@@ -101,7 +101,9 @@ class ContentExtractor:
                 "Si no hay texto, describe brevemente qué muestra la imagen "
                 "para guardarlo en un diario digital."
             )
+
             resultado = llm.analizar_imagen(datos_imagen, prompt)
+            print(resultado)
             if resultado == "ERROR_LIMIT":
                 return "⚠️ ERROR IMAGEN: límite de API alcanzado."
             return f"\n[IMAGE]: {ContentExtractor.sanitize_text(resultado)}"

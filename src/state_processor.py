@@ -48,7 +48,17 @@ class StateProcessor:
             etiqueta = "Todo el inbox"
         else:
             import re as _re
-            numeros = _re.findall(r'\d+', entrada)
+            # Primero intentamos números separados: "1 3", "1,3", "1 y 3"
+            # Si no hay separadores, tratamos cada dígito individual: "13" → 1 y 3
+            numeros_raw = _re.findall(r'\d+', entrada)
+            # Si hay un número de más de 1 dígito y no hay separadores, split por dígito
+            numeros = []
+            for tok in numeros_raw:
+                if len(tok) == 1:
+                    numeros.append(tok)
+                else:
+                    # "13" → ["1","3"], "123" → ["1","2","3"]
+                    numeros.extend(list(tok))
             indices_grupos = []
             for n in numeros:
                 idx = int(n) - 1  # 1-based → 0-based
@@ -128,10 +138,10 @@ class StateProcessor:
     def _formatear_menu(grupos, invalida=False):
         lineas = []
         if invalida:
-            lineas.append("⚠️ Invalid option. Use numbers, combinations or 'todos'.\n")
-        lineas.append("🗂️ *Choose which groups to process:*\n")
+            lineas.append("⚠️ Opción no válida. Escribe un número o 'todos'.\n")
+        lineas.append("🗂️ *¿Qué grupo quieres procesar?*\n")
         for i, g in enumerate(grupos, 1):
             lineas.append(f"  *{i}.* {g['titulo']} ({len(g['indices'])} notes)")
-        lineas.append(f"\n  *todos* — Process everything together")
-        lineas.append("\nYou can combine groups: *1*, *2*, *1 3*, *1 2 3*, *todos*")
+        lineas.append(f"\n  *todos* — Procesar todo junto")
+        lineas.append("\nPuedes combinar: *1 3*, *1 2*, *todos*")
         return "\n".join(lineas)

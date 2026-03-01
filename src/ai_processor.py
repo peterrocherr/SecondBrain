@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from content_extractor import ContentExtractor
 
 
@@ -8,14 +9,9 @@ class AIProcessor:
         self.modelo = modelo_llm
 
     # ------------------------------------------------------------------
-    # PASO 1: Resolución lazy (imágenes, webs, YouTube → texto real)
+    # PASO 1: Resolución lazy (siempre 1 llamada por pendiente)
     # ------------------------------------------------------------------
     def _resolver_pendientes(self, lista_inbox: list) -> list:
-        """
-        Convierte entradas lazy en texto real.
-        Solo se ejecuta en /process, nunca en la captura.
-        Es idempotente: notas ya resueltas no vuelven a procesarse.
-        """
         resueltas = []
         for nota in lista_inbox:
             img_match = re.search(r'\[IMAGE_PENDING\]:\s*(\S+)', nota)
@@ -46,47 +42,51 @@ class AIProcessor:
         return resueltas
 
     # ------------------------------------------------------------------
-    # PASO 2A: Detección de grupos temáticos (Opción A Kelea)
+    # PASO 2: Detección de grupos + propuesta en UNA SOLA llamada
     # ------------------------------------------------------------------
     def detectar_grupos(self, lista_inbox: list) -> dict:
         """
-        Resuelve el inbox y pide a la IA que detecte grupos temáticos.
-        Devuelve:
-            {
-                "notas_resueltas": [...],   # notas ya sin pendientes
-                "grupos": [
-                    {"titulo": "Python y async", "indices": [0, 2, 4]},
-                    {"titulo": "Recetas mediterráneas", "indices": [1, 3]},
-                ]
-            }
-        Si solo hay un grupo, el llamador puede saltar el menú de selección.
+        Resuelve pendientes y en UNA llamada al LLM:
+        - Si todas las notas tratan del mismo tema → devuelve 1 grupo con propuesta completa
+        - Si hay temas distintos → devuelve los grupos para que el usuario elija
+
+        Esto reduce el flujo de 3 llamadas LLM a máximo 2 (resolución + análisis).
         """
         if not lista_inbox:
             return None
 
         notas_resueltas = self._resolver_pendientes(lista_inbox)
-
-        # Construimos el contexto numerado para que la IA devuelva índices
         contexto = "\n".join([f"[{i}] {n[:400]}" for i, n in enumerate(notas_resueltas)])
+        n = len(notas_resueltas)
 
         prompt = f"""
-        Eres un clasificador de notas personales. Analiza las siguientes notas numeradas
-        y agrúpalas por tema o asunto principal.
+        Eres un organizador de conocimiento personal. Analiza estas notas numeradas.
 
-        REGLAS ESTRICTAS:
-        1. Cada nota pertenece a UN solo grupo.
-        2. Usa entre 1 y 5 grupos. Si todo trata del mismo tema, devuelve 1 grupo.
-        3. Los títulos de grupo deben ser cortos y descriptivos (máx. 5 palabras).
-        4. Devuelve SOLO el JSON, sin texto adicional.
+        TAREA:
+        1. Determina si todas las notas tratan del mismo tema o de temas distintos.
+        2a. Si es UN SOLO TEMA: devuelve modo "single" con la propuesta completa.
+        2b. Si hay TEMAS DISTINTOS (máx. 5 grupos): devuelve modo "multi" con los grupos.
 
         NOTAS:
         {contexto}
 
-        Responde ÚNICAMENTE con este JSON:
+        Responde SOLO con uno de estos dos JSON:
+
+        Modo un tema:
         {{
+            "modo": "single",
+            "tema": "Título claro",
+            "resumen": "Resumen en Markdown",
+            "fuentes": "tipos de contenido",
+            "fun_fact": "dato curioso"
+        }}
+
+        Modo varios temas:
+        {{
+            "modo": "multi",
             "grupos": [
-                {{"titulo": "Título del grupo", "indices": [0, 2, 4]}},
-                {{"titulo": "Otro grupo", "indices": [1, 3]}}
+                {{"titulo": "Nombre del grupo", "indices": [0, 2]}},
+                {{"titulo": "Otro grupo", "indices": [1]}}
             ]
         }}
         """
@@ -96,52 +96,66 @@ class AIProcessor:
             limpio = respuesta.replace("```json", "").replace("```", "").strip()
             match = re.search(r'\{.*\}', limpio, re.DOTALL)
             if not match:
-                return {"notas_resueltas": notas_resueltas, "grupos": [{"titulo": "Todo el inbox", "indices": list(range(len(notas_resueltas)))}]}
+                raise ValueError("Sin JSON en respuesta")
 
             datos = json.loads(match.group(0), strict=False)
-            grupos = datos.get("grupos", [])
+            modo = datos.get("modo")
 
-            # Validación defensiva: si algún índice está fuera de rango, lo descartamos
-            n = len(notas_resueltas)
-            grupos_limpios = []
-            for g in grupos:
-                indices_validos = [i for i in g.get("indices", []) if 0 <= i < n]
-                if indices_validos:
-                    grupos_limpios.append({"titulo": g["titulo"], "indices": indices_validos})
+            if modo == "single":
+                # Ya tenemos la propuesta, no hace falta otra llamada
+                propuesta = {k: datos[k] for k in ["tema", "resumen", "fuentes", "fun_fact"] if k in datos}
+                if isinstance(propuesta.get("fuentes"), list):
+                    propuesta["fuentes"] = ", ".join(propuesta["fuentes"])
+                return {
+                    "notas_resueltas": notas_resueltas,
+                    "grupos": [{"titulo": datos.get("tema", "Todo el inbox"), "indices": list(range(n))}],
+                    "propuesta_directa": propuesta  # Ahorramos la 3ª llamada
+                }
 
-            if not grupos_limpios:
-                grupos_limpios = [{"titulo": "Todo el inbox", "indices": list(range(n))}]
+            elif modo == "multi":
+                grupos = datos.get("grupos", [])
+                grupos_limpios = []
+                for g in grupos:
+                    indices_validos = [i for i in g.get("indices", []) if 0 <= i < n]
+                    if indices_validos:
+                        grupos_limpios.append({"titulo": g["titulo"], "indices": indices_validos})
 
-            return {"notas_resueltas": notas_resueltas, "grupos": grupos_limpios}
+                if not grupos_limpios:
+                    raise ValueError("Grupos vacíos")
+
+                return {"notas_resueltas": notas_resueltas, "grupos": grupos_limpios}
 
         except Exception as e:
             print(f"Error en detectar_grupos: {e}")
-            # Fallback seguro: un único grupo con todo
-            return {"notas_resueltas": notas_resueltas, "grupos": [{"titulo": "Todo el inbox", "indices": list(range(len(notas_resueltas)))}]}
+
+        # Fallback: un grupo, sin propuesta directa
+        return {
+            "notas_resueltas": notas_resueltas,
+            "grupos": [{"titulo": "Todo el inbox", "indices": list(range(n))}]
+        }
 
     # ------------------------------------------------------------------
-    # PASO 2B: Generar propuesta para un subconjunto de notas
+    # PASO 3: Generar propuesta para un subconjunto (solo si modo multi)
     # ------------------------------------------------------------------
     def generar_propuesta(self, notas: list) -> dict:
         """
-        Genera una propuesta de topic estructurado para una lista de notas.
-        Las notas deben estar ya resueltas (sin pendientes).
+        Solo se llama cuando el usuario elige un grupo en modo multi.
+        En modo single, la propuesta ya viene incluida en detectar_grupos.
         """
         if not notas:
             return None
 
-        # _resolver_pendientes es idempotente: no hace nada si ya están resueltas
         notas = self._resolver_pendientes(notas)
         textos_unidos = "\n--- NUEVA NOTA ---\n".join(notas)
 
         prompt = f"""
         Eres un organizador de conocimiento personal estricto.
-        TU MISIÓN: Crear una propuesta de conocimiento estructurado a partir de estas notas.
+        Crea una propuesta estructurada a partir de estas notas.
 
         REGLAS:
-        1. NO uses información externa ni de conversaciones previas.
+        1. NO uses información externa.
         2. Sé fiel al contenido de las notas.
-        3. Si hay subtemas dentro del grupo, refléjalos en el resumen con secciones Markdown.
+        3. Si hay subtemas, refléjalos con secciones Markdown.
 
         NOTAS:
         {textos_unidos}
@@ -161,7 +175,11 @@ class AIProcessor:
             match = re.search(r'\{.*\}', limpio, re.DOTALL)
             if not match:
                 return None
-            return json.loads(match.group(0), strict=False)
+            datos = json.loads(match.group(0), strict=False)
+            # Normalizar fuentes a string siempre
+            if isinstance(datos.get("fuentes"), list):
+                datos["fuentes"] = ", ".join(datos["fuentes"])
+            return datos
         except Exception as e:
             print(f"Error en generar_propuesta: {e}")
             return None

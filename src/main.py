@@ -26,6 +26,10 @@ def iniciar_servidor():
     streak_manager = StreakManager()
     motor = WhatsAppComms()
     motor.configurar_twilio(os.getenv("TWILIO_SID"), os.getenv("TWILIO_TOKEN"), os.getenv("TWILIO_PHONE"))
+    # PUBLIC_URL es la URL pública del servidor (ej. https://xxxx.ngrok.io)
+    # Necesaria para que Twilio pueda descargar los ficheros de exportación
+    if os.getenv("PUBLIC_URL"):
+        motor.configurar_url_publica(os.getenv("PUBLIC_URL"))
 
     # 2. Gestores de Inbox y AI
     inbox = InboxManager()

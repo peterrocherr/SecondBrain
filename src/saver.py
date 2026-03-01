@@ -23,9 +23,14 @@ class Saver:
         )''')
         self.conn.commit()
 
-    def guardar_conocimiento_final(self, tema: str, resumen: str, fuentes: str = "Inbox") -> bool:
+    def guardar_conocimiento_final(self, tema: str, resumen, fuentes="Inbox") -> bool:
         try:
-            self.conn.execute('INSERT INTO topics (tema, resumen, fuentes) VALUES (?, ?, ?)', (tema, resumen, fuentes))
+            # Normalizar: la IA a veces devuelve fuentes como lista
+            if isinstance(fuentes, list):
+                fuentes = ", ".join(fuentes)
+            if isinstance(resumen, list):
+                resumen = " ".join(resumen)
+            self.conn.execute('INSERT INTO topics (tema, resumen, fuentes) VALUES (?, ?, ?)', (tema, str(resumen), str(fuentes)))
             self.conn.commit()
             return True
         except Exception as e:
@@ -77,8 +82,8 @@ class Saver:
     def exportar_markdown(self, carpeta: str = "cerebro_digital") -> str:
         """
         Exporta todos los topics a ficheros Markdown individuales.
-        Kelea valora explícitamente formatos abiertos y portabilidad.
-        Cada fichero es compatible con Obsidian, MkDocs o cualquier editor.
+        Compatible con Obsidian y MkDocs.
+        Devuelve la ruta del fichero único para enviar por WhatsApp.
         """
         import os
         os.makedirs(carpeta, exist_ok=True)
@@ -88,32 +93,34 @@ class Saver:
         topics = cursor.fetchall()
 
         if not topics:
-            return "📭 No hay topics para exportar."
+            return None, "📭 No hay nada en tu cerebro digital para exportar."
 
-        archivos = []
+        # Fichero único con todos los topics (para enviar por WhatsApp)
+        ruta_unica = os.path.join(carpeta, "cerebro_digital.md")
+        lineas = ["# 🧠 Cerebro Digital\n\n"]
+
+        archivos_individuales = []
         for tema, resumen, fuentes, fecha in topics:
-            # Nombre de fichero seguro
-            nombre = "".join(c if c.isalnum() or c in " -_" else "_" for c in tema)[:60].strip()
-            ruta = os.path.join(carpeta, f"{nombre}.md")
+            # Añadir al fichero único
+            lineas.append(f"---\n\n## {tema}\n")
+            lineas.append(f"> **Fuentes:** {fuentes}  \n> **Fecha:** {fecha}\n\n")
+            lineas.append(f"{resumen}\n\n")
 
-            contenido = f"""# {tema}
+            # También guardar fichero individual (compatibilidad Obsidian)
+            nombre = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in tema)[:60].strip()
+            ruta_ind = os.path.join(carpeta, f"{nombre}.md")
+            with open(ruta_ind, "w", encoding="utf-8") as f:
+                f.write(f"# {tema}\n\n> **Fuentes:** {fuentes}  \n> **Fecha:** {fecha}\n\n{resumen}\n")
+            archivos_individuales.append(nombre)
 
-> **Fuentes:** {fuentes}  
-> **Fecha:** {fecha}
+        with open(ruta_unica, "w", encoding="utf-8") as f:
+            f.write("".join(lineas))
 
-{resumen}
-"""
-            with open(ruta, "w", encoding="utf-8") as f:
-                f.write(contenido)
-            archivos.append(nombre)
-
-        # Crear índice general
-        indice = "# 🧠 Cerebro Digital\n\n"
-        indice += "\n".join([f"- [[{a}]]" for a in archivos])
+        # INDEX.md para Obsidian
         with open(os.path.join(carpeta, "INDEX.md"), "w", encoding="utf-8") as f:
-            f.write(indice)
+            f.write("# 🧠 Índice\n\n" + "\n".join([f"- [[{a}]]" for a in archivos_individuales]))
 
-        return f"✅ Exportados {len(archivos)} topics a `/{carpeta}/`. Compatible con Obsidian y MkDocs."
+        return ruta_unica, f"✅ {len(topics)} topics exportados."
 
     def borrar_cerebro(self):
         """Elimina todos los topics de la base de datos."""

@@ -19,26 +19,28 @@ class CommandProcessor:
         elif comando_base == "/process":
             all_notes = self.inbox.obtener_todo(usuario=remitente)
             if not all_notes:
-                self.motor.enviar_mensaje(remitente, "📭 Your Inbox is empty.")
+                self.motor.enviar_mensaje(remitente, "📭 Tu inbox está vacío.")
                 return
 
-            self.motor.enviar_mensaje(remitente, f"🔍 Analyzing {len(all_notes)} items and detecting themes...")
+            self.motor.enviar_mensaje(remitente, f"🔍 Analizando {len(all_notes)} elementos y detectando temas...")
 
             resultado = self.ai.detectar_grupos(all_notes)
             if not resultado:
                 self.motor.enviar_mensaje(
                     remitente,
-                    "❌ Couldn't analyze the inbox. Try /rectify to add more context, then /process again."
+                    "❌ No pude analizar el inbox. Usa /rectify para añadir contexto e inténtalo de nuevo."
                 )
                 return
 
             grupos = resultado["grupos"]
 
             if len(grupos) == 1:
-                # Un solo tema: saltar el menú, ir directo a propuesta
-                notas = [resultado["notas_resueltas"][i] for i in grupos[0]["indices"]]
-                self.motor.enviar_mensaje(remitente, f"🧠 Generating proposal for *{grupos[0]['titulo']}*...")
-                propuesta = self.ai.generar_propuesta(notas)
+                # Un solo tema: usar propuesta_directa si ya viene incluida (ahorra 1 llamada LLM)
+                propuesta = resultado.get("propuesta_directa")
+                if not propuesta:
+                    notas = [resultado["notas_resueltas"][i] for i in grupos[0]["indices"]]
+                    self.motor.enviar_mensaje(remitente, f"🧠 Generando propuesta para *{grupos[0]['titulo']}*...")
+                    propuesta = self.ai.generar_propuesta(notas)
                 if propuesta:
                     self.estado.set_estado_validacion(remitente, propuesta)
                     msg = (
@@ -50,7 +52,7 @@ class CommandProcessor:
                 else:
                     self.motor.enviar_mensaje(
                         remitente,
-                        "❌ Couldn't generate a proposal. Try /rectify to add more context, then /process again."
+                        "❌ No pude generar una propuesta. Usa /rectify para añadir más contexto e inténtalo de nuevo."
                     )
             else:
                 # Varios temas: mostrar menú de selección
@@ -61,10 +63,10 @@ class CommandProcessor:
         elif comando_base == "/rectify":
             rectification = texto_completo[8:].strip()
             if not rectification:
-                self.motor.enviar_mensaje(remitente, "⚠️ Use: `/rectify [notes]`")
+                self.motor.enviar_mensaje(remitente, "⚠️ Uso: `/rectify [texto]`")
             else:
                 self.inbox.guardar_nota(f"User Correction: {rectification}", usuario=remitente)
-                self.motor.enviar_mensaje(remitente, "🔧 Added to the processing queue.")
+                self.motor.enviar_mensaje(remitente, "🔧 Añadido a la cola de procesamiento.")
 
         elif comando_base == "/list":
             db_res, _ = self.saver.listar_conocimiento()
@@ -72,8 +74,8 @@ class CommandProcessor:
             inbox_count = self.inbox.contar_pendientes(remitente)
             header = (
                 f"📊 *STATUS*\n"
-                f"- Brain database: {self.saver.contar_topics()} notes\n"
-                f"- Inbox queue: {inbox_count} items\n"
+                f"- Base de conocimiento: {self.saver.contar_topics()} notas\n"
+                f"- Inbox pendiente: {inbox_count} elementos\n"
                 f"{inbox_breakdown}\n\n"
             )
             self.motor.enviar_mensaje(remitente, header + db_res)
@@ -83,12 +85,12 @@ class CommandProcessor:
 
         elif comando_base == "/remove":
             self.estado.estados[remitente] = "ESPERANDO_BORRADO_DB"
-            self.motor.enviar_mensaje(remitente, "⚠️ *ALERT!* Wipe database? (Yes/No)")
+            self.motor.enviar_mensaje(remitente, "⚠️ *ALERTA* ¿Borrar toda la base de datos? (Sí/No)")
 
         elif comando_base == "/remember":
             query = texto_completo[9:].strip()
             if not query:
-                self.motor.enviar_mensaje(remitente, "⚠️ Use: `/remember [question]`")
+                self.motor.enviar_mensaje(remitente, "⚠️ Uso: `/remember [pregunta]`")
             else:
                 self.motor.enviar_mensaje(remitente, self.saver.recordar_topic(query))
 
@@ -99,7 +101,13 @@ class CommandProcessor:
             self.motor.enviar_mensaje(remitente, self.reminders.procesar_intervalo(remitente, texto_completo))
 
         elif comando_base == "/export":
-            self.motor.enviar_mensaje(remitente, self.saver.exportar_markdown())
+            ruta, msg = self.saver.exportar_markdown()
+            if ruta and hasattr(self.motor, "enviar_archivo") and getattr(self.motor, "public_url", None):
+                # Enviar el fichero .md directamente por WhatsApp
+                self.motor.enviar_archivo(remitente, ruta, caption=msg)
+            else:
+                # Fallback: solo mensaje de texto (simulador o sin URL pública)
+                self.motor.enviar_mensaje(remitente, msg if msg else "📭 No hay nada que exportar.")
 
         elif comando_base == "/quiz":
             self.motor.enviar_mensaje(
@@ -109,9 +117,9 @@ class CommandProcessor:
 
     @staticmethod
     def _formatear_menu_grupos(grupos):
-        lineas = ["🗂️ *I found multiple themes in your inbox. Which one should I process?*\n"]
+        lineas = ["🗂️ *He detectado varios temas en tu inbox. ¿Cuál proceso?*\n"]
         for i, g in enumerate(grupos, 1):
-            lineas.append(f"  *{i}.* {g['titulo']} ({len(g['indices'])} notes)")
-        lineas.append(f"\n  *todos* — Process everything together")
-        lineas.append("\nYou can combine: *1*, *2*, *1 3*, *1 2 3*, *todos*")
+            lineas.append(f"  *{i}.* {g['titulo']} ({len(g['indices'])} notas)")
+        lineas.append(f"\n  *todos* — Procesar todo junto")
+        lineas.append("\nPuedes combinar: *1 3*, *1 2*, *todos*")
         return "\n".join(lineas)
